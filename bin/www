@@ -7,6 +7,9 @@
 var app = require('../app');
 var debug = require('debug')('tiledesk-server:server');
 var http = require('http');
+var version = require('../package.json').version
+var createTerminus  = require('@godaddy/terminus').createTerminus;
+var mongoose = require('mongoose');
 
 /**
  * Get port from environment and store in Express.
@@ -19,26 +22,117 @@ app.set('port', port);
  * Create HTTP server.
  */
 
-var server = http.createServer(app);
+// var modulesManager = require('../modules/modulesManager');
+// app=modulesManager.injectBefore(app);
 
-// var testWsService = require('../services/testWsService');
-// testWsService.init(server);
+// const  ApolloServer  = require('apollo-server-express').ApolloServer;
+// const typeDefs = require('../graphql/schema');
+// const resolvers = require('../graphql/resolvers');
+// var apolloServer = new ApolloServer({ typeDefs, resolvers, 
+//   // https://www.apollographql.com/docs/apollo-server/features/graphql-playground/#Enabling-GraphQL-Playground-in-production
+//   introspection: true,
+//   playground: true});
+// apolloServer.applyMiddleware({ app });
 
-//RE-ENABLE IT
-//var messageWsService = require('../services/messageWsService');
-//messageWsService.init(server);
+
+var httpServer = http.createServer(app);
+
+//RE-ENABLE STANDART WEBSCOKET IT
+var webSocketServer = require('../websocket/webSocketServer');
+webSocketServer.init(httpServer);
+
+// apolloServer.installSubscriptionHandlers(httpServer);
+// httpServer=modulesManager.injectAfter(httpServer,app,port);
+
+
+
+//terminous start
+function onSignal () {
+  console.log('server is starting cleanup');
+
+  return new Promise((resolve, reject) => {
+    mongoose.close(false)
+      .then(() => {
+        console.info('Mongoose has disconnected')
+        resolve()
+      })
+      .catch(reject)
+  })
+
+  // return Promise.all([
+  //   // your clean logic, like closing database connections
+  // ]);
+}
+
+function onShutdown () {
+  console.log('cleanup finished, server is shutting down');
+}
+
+// https://github.com/godaddy/terminus/blob/master/example/mongoose/express.js
+function healthCheck () {
+  // https://mongoosejs.com/docs/api.html#connection_Connection-readyState
+  const { readyState } = mongoose;
+  // console.log('healthCheck',readyState );
+
+  // ERR_CONNECTING_TO_MONGO
+  if (readyState === 0 || readyState === 3) {
+    console.log('Mongoose has disconnected');
+    return Promise.reject(new Error('Mongoose has disconnected'))
+  }
+  // CONNECTING_TO_MONGO
+  if (readyState === 2) {
+    console.log('Mongoose is connecting');
+    return Promise.reject(new Error('Mongoose is connecting'))
+  }
+  console.log('Mongoose connected');
+  // CONNECTED_TO_MONGO
+  return Promise.resolve()
+
+  // return Promise.resolve(
+  //   // optionally include a resolve value to be included as
+  //   // info in the health check response
+  // )
+}
+
+const termOptions = {
+  // health check options
+  healthChecks: {
+    '/healthcheck': healthCheck,    // a function returning a promise indicating service health,
+    verbatim: true // [optional = false] use object returned from /healthcheck verbatim in response
+  },
+  caseInsensitive:false, // [optional] whether given health checks routes are case insensitive (defaults to false) 
+
+  // cleanup options
+  timeout: 1000,                   // [optional = 1000] number of milliseconds before forceful exiting
+  // signal,                          // [optional = 'SIGTERM'] what signal to listen for relative to shutdown
+  // signals,                         // [optional = []] array of signals to listen for relative to shutdown
+  // beforeShutdown,                  // [optional] called before the HTTP server starts its shutdown
+  onSignal,                        // [optional] cleanup function, returning a promise (used to be onSigterm)
+  onShutdown,                      // [optional] called right before exiting
+  // onSendFailureDuringShutdown,     // [optional] called before sending each 503 during shutdowns
+
+  // both
+  // logger                           // [optional] logger function to be called with errors
+};
+createTerminus(httpServer, termOptions);
 
 
 /**
  * Listen on provided port, on all network interfaces.
  */
 
-var listener = server.listen(port,function(){
-    console.log('Listening on port ' + listener.address().port); //Listening on port 8888
+var listener = httpServer.listen(port,function(){
+    console.log('Listening tiledesk-server ver:'+version+' on port ' + listener.address().port); //Listening on port 8888
+
+ 
+    // console.log(`🚀 GraphQl Server ready at http://localhost:${port}${apolloServer.graphqlPath}`)
+    // console.log(`🚀 GraphQl Subscriptions ready at ws://localhost:${port}${apolloServer.subscriptionsPath}`)
+ 
+
 });
 
-server.on('error', onError);
-server.on('listening', onListening);
+httpServer.on('error', onError);
+httpServer.on('listening', onListening);
 
 /**
  * Normalize a port into a number, string, or false.
@@ -93,7 +187,7 @@ function onError(error) {
  */
 
 function onListening() {
-  var addr = server.address();
+  var addr = httpServer.address();
   var bind = typeof addr === 'string'
     ? 'pipe ' + addr
     : 'port ' + addr.port;

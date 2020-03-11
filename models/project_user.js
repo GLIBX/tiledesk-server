@@ -17,34 +17,67 @@ var winston = require('../config/winston');
     // _id: Schema.Types.ObjectId,
     id_project: {
       type: Schema.Types.ObjectId,
-      ref: 'project'
+      ref: 'project',
+      index: true
       // required: true
     },
     id_user: {
       // type: String,
       // required: true
       type: Schema.Types.ObjectId,
-      ref: 'User'
+      ref: 'user',
+      index: true
+    },
+    uuid_user: {
+      type: String,
+      index: true
+      // required: true
     },
     role: {
       type: String,
+      index: true
       // required: true
     },
     user_available: {
       type: Boolean,
       // required: true
     },
+    attributes: {
+      type: Object,
+    },
+    max_served_chat: {
+      type: Number,
+    },
+    last_ip: {
+        type: String,
+    },
     createdBy: {
       type: String,
       required: true
     }
   }, {
-      timestamps: true
+      timestamps: true,
+      toJSON: { virtuals: true } //used to polulate messages in toJSON// https://mongoosejs.com/docs/populate.html
     }
   );
 
  
+  Project_userSchema.virtual('events', {
+    ref: 'event', // The model to use
+    localField: '_id', // Find people where `localField`
+    foreignField: 'project_user', // is equal to `foreignField`
+    justOne: false,
+    // options: { getters: true }
+    options: { sort: { createdAt: -1 }, limit: 5 } // Query options, see http://bit.ly/mongoose-query-options
+});
 
+
+// Project_userSchema.virtual('numRequests', {
+//   ref: 'request', // The model to use
+//   localField: 'id_user', // Find people where `localField`
+//   foreignField: 'participants', // is equal to `foreignField`
+//   count: true // And only get the number of docs
+// });
 
   // Project_userSchema.methods = {
   //     toStringTest : function() {
@@ -96,11 +129,8 @@ var winston = require('../config/winston');
   //     }
   // };
 
+  // Project_userSchema.index({ id_project: 1, uuid_user: 1 }, { unique: true }); 
 
-
-
-  // mongoose.model('project_user', Project_userSchema);;
 
   module.exports = mongoose.model('project_user', Project_userSchema);;
-// }
-// return mongoose.model('project_user', Project_userSchema);;
+

@@ -1,9 +1,9 @@
 var express = require('express');
 var router = express.Router();
 var Group = require("../models/group");
+var groupEvent = require("../event/groupEvent");
 var winston = require('../config/winston');
-//var Activity = require("../models/activity");
-//const activityEvent = require('../event/activityEvent');
+
 
 
 router.post('/', function (req, res) {
@@ -24,10 +24,8 @@ router.post('/', function (req, res) {
       return res.status(500).send({ success: false, msg: 'Error saving object.' });
     }
 
-    //var activity = new Activity({actor: req.user.id, verb: "GROUP_CREATE", actionObj: req.body, target: req.originalUrl, id_project: req.projectid });
-    //activityEvent.emit('group.create', activity);
-
-
+  
+    groupEvent.emit('group.create', savedGroup);
     res.json(savedGroup);
   });
 });
@@ -36,32 +34,63 @@ router.put('/:groupid', function (req, res) {
 
   winston.debug(req.body);
 
-  Group.findByIdAndUpdate(req.params.groupid, req.body, { new: true, upsert: true }, function (err, updatedGroup) {
+  var update = {};
+  if (req.body.name!=undefined) {
+    update.name = req.body.name;
+  }
+  if (req.body.members!=undefined) {
+    update.members = req.body.members;
+  }
+  if (req.body.trashed!=undefined) {
+    update.trashed = req.body.trashed;
+  }
+  
+
+  Group.findByIdAndUpdate(req.params.groupid, update, { new: true, upsert: true }, function (err, updatedGroup) {
     if (err) {
       winston.error('Error putting the group ', err);
       return res.status(500).send({ success: false, msg: 'Error updating object.' });
     }
 
-    //var activity = new Activity({actor: req.user.id, verb: "GROUP_UPDATE", actionObj: req.body, target: req.originalUrl, id_project: req.projectid });
-    //activityEvent.emit('group.update', activity);
-
+    groupEvent.emit('group.update', updatedGroup);
     res.json(updatedGroup);
   });
 });
 
+// router.put('/:groupid', function (req, res) {
+
+//   winston.debug(req.body);
+
+//   var update = {};
+  
+//     update.name = req.body.name;
+//     update.members = req.body.members;
+//     update.trashed = req.body.trashed;
+  
+
+//   Group.findByIdAndUpdate(req.params.groupid, update, { new: true, upsert: true }, function (err, updatedGroup) {
+//     if (err) {
+//       winston.error('Error putting the group ', err);
+//       return res.status(500).send({ success: false, msg: 'Error updating object.' });
+//     }
+
+//     groupEvent.emit('group.update', updatedGroup);
+//     res.json(updatedGroup);
+//   });
+// });
 
 router.delete('/:groupid', function (req, res) {
 
   winston.debug(req.body);
 
-  Group.remove({ _id: req.params.groupid }, function (err, group) {
+  Group.findOneAndRemove({_id: req.params.groupid}, function (err, group) {
+    // Group.remove({ _id: req.params.groupid }, function (err, group) {
     if (err) {
       winston.error('Error removing the group ', err);
       return res.status(500).send({ success: false, msg: 'Error deleting object.' });
     }
-
-    //var activity = new Activity({actor: req.user.id, verb: "GROUP_DELETE", actionObj: req.body, target: req.originalUrl, id_project: req.projectid });
-    //activityEvent.emit('group.delete', activity);
+// nn funziuona perchje nn c'è id_project
+    groupEvent.emit('group.delete', group);
 
     res.json(group);
   });
@@ -92,8 +121,7 @@ router.get('/', function (req, res) {
   winston.debug("req projectid", req.projectid);
 
 
-  Group.find({ "id_project": req.projectid, trashed: false }, function (err, groups) {    
-    // console.log('4')
+  Group.find({ "id_project": req.projectid, trashed: false }, function (err, groups) {        
     if (err) {
       winston.error('Error getting the group ', err);
       return next(err);

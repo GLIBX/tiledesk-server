@@ -1,10 +1,12 @@
 
 const botEvent = require('../event/botEvent');
 var Faq = require('../models/faq');
+var Faq_kb = require('../models/faq_kb');
 var messageService = require('../services/messageService');
 var MessageConstants = require("../models/messageConstants");
 var winston = require('../config/winston');
 var faqBotSupport = require('../services/faqBotSupport');
+var BotFromParticipant = require("../utils/botFromParticipant");
 
 class FaqBotHandler {
  
@@ -14,65 +16,138 @@ class FaqBotHandler {
         botEvent.on('bot.message.received.notify.internal', function(message) {
                            
 
-           var botName = message.request.department.bot.name;
-           winston.debug("botName " + botName);
+        //    var botName = message.request.department.bot.name;
+        //    winston.debug("botName " + botName);
 
-           var botId = message.request.department.bot._id;
+           var botId =  BotFromParticipant.getBotId(message);
+
            winston.debug("botId " + botId);
 
            winston.debug("message.text "+ message.text);
          
 
-           var query = { "id_project": message.id_project };
+           Faq_kb.findById(botId).exec(function(err, faq_kb) {
+            if (err) {
+              return res.status(500).send({ success: false, msg: 'Error getting object.' });
+            }
+            if (!faq_kb) {
+              return res.status(404).send({ success: false, msg: 'Object not found.' });
+            }
+            winston.debug('faq_kb ', faq_kb.toJSON());
+            winston.debug('faq_kb.type :'+ faq_kb.type);
 
-           query.$text = {"$search": message.text};
-            
-            Faq.find(query,  {score: { $meta: "textScore" } })  
+            var botName = faq_kb.name;
+            winston.debug("botName " + botName);
+
+            var query = { "id_project": message.id_project, "id_faq_kb": faq_kb._id, "question": message.text};
+
+
+            Faq.find(query) 
             .lean().               
              exec(function (err, faqs) {
-                winston.debug("faqs", faqs);              
+               if (err) {
+                 return res.status(500).send({ success: false, msg: 'Error getting object.' });
+               }
 
-               let sender = 'bot_' + botId;
-               winston.debug("sender", sender);          
+               if (faqs && faqs.length>0) {
+                    winston.debug("faqs exact", faqs);              
+        
+                    winston.debug("faqs", faqs);              
+
+                    let sender = 'bot_' + botId;
+                    winston.debug("sender", sender);          
+                
+
+                    var answerObj;
+                    if (faqs && faqs.length>0 && faqs[0].answer) {
+                        answerObj = faqs[0];                
+
+                        // send(sender, senderFullname, recipient, text, id_project, createdBy, attributes, type) {
+                        messageService.send(sender, botName, message.recipient, answerObj.answer, 
+                            message.id_project, sender).then(function(savedMessage){
+
+                                winston.info("faqbot message sending ", savedMessage.toObject());  
+                        });
+        
+                    }
+                    
+                
+
+                    faqBotSupport.getBotMessage(answerObj, message.id_project, message.request.department._id, message.language, 1.2).then(function(botAns){
+                        winston.debug("faqbot message botAns ", botAns);  
+
+                        if (botAns) {
+                            let attributes = {bot_reponse_template: botAns.template};
+                            messageService.send(sender, botName, message.recipient, botAns.text, 
+                                message.id_project, sender, attributes).then(function(savedMessage){
+                                    winston.info("faqbot message botAns " ,savedMessage.toObject());  
+                            });
+                        }
+                    
+
+                    });
+
+
+               } else {
+ 
+                query = { "id_project": message.id_project, "id_faq_kb": faq_kb._id};
+                query.$text = {"$search": message.text};
+            
+                Faq.find(query,  {score: { $meta: "textScore" } })  
+                .sort( { score: { $meta: "textScore" } } ) //https://docs.mongodb.com/manual/reference/operator/query/text/#sort-by-text-search-score
+                .lean().               
+                exec(function (err, faqs) {
+                    winston.debug("faqs", faqs);              
+
+                    let sender = 'bot_' + botId;
+                    winston.debug("sender", sender);          
+                
+
+                    var answerObj;
+                    if (faqs && faqs.length>0 && faqs[0].answer) {
+                        answerObj = faqs[0];                
+
+                        // send(sender, senderFullname, recipient, text, id_project, createdBy, attributes) {
+                        messageService.send(sender, botName, message.recipient, answerObj.answer, 
+                            message.id_project, sender).then(function(savedMessage){
+
+                                winston.info("faqbot message sending ", savedMessage.toObject());  
+                        });
+        
+                    }
+                    
+                
+
+                    faqBotSupport.getBotMessage(answerObj, message.id_project, message.request.department._id, message.language, 1.2).then(function(botAns){
+                        winston.debug("faqbot message botAns ", botAns);  
+
+                        if (botAns) {
+                            let attributes = {bot_reponse_template: botAns.template};
+                            messageService.send(sender, botName, message.recipient, botAns.text, 
+                                message.id_project, sender, attributes).then(function(savedMessage){
+                                    winston.debug("faqbot message botAns " ,savedMessage.toObject());  
+                            });
+                        }
+
+                    });
+
+
                
 
-                var answerObj;
-                if (faqs && faqs.length>0 && faqs[0].answer) {
-                    answerObj = faqs[0];                
-
-
-                    messageService.create(sender, botName, message.recipient, answerObj.answer, 
-                        message.id_project, sender, MessageConstants.CHAT_MESSAGE_STATUS.SENDING).then(function(savedMessage){
-                            winston.info("faqbot message sending ", savedMessage.toObject());  
-                    });
-    
-                }
-                
-              
-
-                faqBotSupport.getBotMessage(answerObj, message.id_project, message.request.department._id, message.language, 1.2).then(function(botAns){
-                    winston.info("faqbot message botAns ", botAns);  
-
-                    let attributes = {bot_reponse_template: botAns.template};
-                    messageService.create(sender, botName, message.recipient, botAns.text, 
-                        message.id_project, sender, MessageConstants.CHAT_MESSAGE_STATUS.SENDING, attributes).then(function(savedMessage){
-                            winston.info("faqbot message botAns " ,savedMessage.toObject());  
-                    });
-
+        
                 });
+
+            }
+           
                 
 
-
+        });
 
 
 
              });
 
-            // se messaggio per faqBot
-            // sollevo evento e webhook message.create.forbot
-            // serco su mongo o servizio gianluca
-            // invio messaggio su chat21
-         
+          
         });
     }
 

@@ -5,10 +5,11 @@ class Tilebase {
       this.url = url;
       this.onCreate = onCreate;
       this.onUpdate = onUpdate;
-      this.data = [];
+      //this.data = [];
       
 
     }
+/*
     insertOrUpdate(item) {
         let objIndex = this.data.findIndex((obj => obj._id == item._id));
         // console.log("objIndex", objIndex);
@@ -26,18 +27,39 @@ class Tilebase {
         return objIndex;
 
     }
-    start() {
+
+
+*/
+    send (message) {
+        console.log("send message", message);
+        this.ws.send(message);
+    }
+    start(initialMessage) {
+        // start(token) {
         var that = this;
         return new Promise(function (resolve, reject) {
+
+            // var options = {
+            //     // headers: {
+            //     //     "Authorization" : "JWT " + token
+            //     // }
+            // };
+            // console.log('options', options);
+
         // var ws = new WebSocket('ws://localhost:3000');
                     // var ws = new WebSocket('ws://localhost:3000/public/requests');
                     // var ws = new WebSocket('ws://localhost:3000/5bae41325f03b900401e39e8/messages');
                     
                     // 'ws://localhost:40510'
-                    var ws = new WebSocket(that.url);
+                    that.ws = new WebSocket(that.url);
+                    var ws = that.ws;
+                    // var ws = new WebSocket(that.url, options);
                     ws.onopen = function () {
-                        console.log('websocket is connected ...')
-                        ws.send('connected')
+                        console.log('websocket is connected2 ...');
+                        if (initialMessage) {
+                            ws.send(initialMessage);
+                        }
+                       // ws.send('connected')
                     }
                     ws.onclose = function () {
                         console.log('websocket is closed ... Try to reconnect in 5 seconds');
@@ -62,30 +84,40 @@ class Tilebase {
                                 //         message.data);
                             }
                             
-                            if (that.isArray(json)) {
-                                json.forEach(element => {
-                                    let insUp = that.insertOrUpdate(element);
+                            if (json && json.payload  && json.payload.message && that.isArray(json.payload.message)) {
+                                json.payload.message.forEach(element => {
+                                   // console.log("element", element);
+                                    //let insUp = that.insertOrUpdate(element);
+                            let insUp = json.payload.method;
+                                console.log("insUp",insUp);
 
-                                    if (insUp==-1 && that.onCreate) {
-                                        that.onCreate(element);
+                                    var object = {event: json.payload, data: element};
+
+                                    if (insUp=="CREATE" && that.onCreate) {
+                                        that.onCreate(element, object);
                                     }
-                                    if (insUp>-1 && that.onUpdate) {
-                                        that.onUpdate(element);
+                                    if (insUp=="UPDATE" && that.onUpdate) {
+                                        that.onUpdate(element, object);
                                     }
                                     //this.data.push(element);
                                     
-                                     resolve(element);
+                                     resolve(element, object);
                                     // $('#messages').after(element.text + '<br>');
                                 });
                             }else {
-                                let insUp = that.insertOrUpdate(json);
-                                if (insUp==-1 && that.onCreate) {
-                                    that.onCreate(json);
+                                //let insUp = that.insertOrUpdate(json.payload.message);
+				                let insUp = json.payload.method;                                                                                                                                                                                                                         
+                                  console.log("insUp",insUp);     
+
+                                var object = {event: json.payload, data: json};
+
+                                if (insUp=="CREATE" && that.onCreate) {
+                                    that.onCreate(json.payload.message, object);
                                 }
-                                if (insUp>-1 && that.onUpdate) {
-                                    that.onUpdate(json);
+                                if (insUp=="UPDATE" && that.onUpdate) {
+                                    that.onUpdate(json.payload.message, object);
                                 }
-                                 resolve(json);
+                                 resolve(json.payload.message, object);
                                 // resolve
                                 // $('#messages').after(json.text + '<br>');
                             }

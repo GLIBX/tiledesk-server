@@ -1,4 +1,10 @@
-FROM node:8
+FROM node:10
+
+RUN apt-get update
+RUN apt-get install nano
+
+
+RUN npm install -g nodemon
 
 # Create app directory
 WORKDIR /usr/src/app
@@ -15,5 +21,16 @@ RUN npm install
 # Bundle app source
 COPY . .
 
+#RUN rm .npmrc
+
+# RUN mkdir /usr/src/app/confenv
+# RUN cp /usr/src/app/.env.sample /usr/src/app/confenv/.env
+
+#oldold RUN touch /usr/src/app/confenv/.env
+
 EXPOSE 3000
+
+
+#CMD [ "npm", "run", "watchenv" ]
 CMD [ "npm", "start" ]
+

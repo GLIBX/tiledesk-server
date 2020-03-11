@@ -3,36 +3,41 @@ var router = express.Router();
 var Project = require("../models/project");
 var winston = require('../config/winston');
 var Project_user = require("../models/project_user");
-var operatingHoursService = require("../models/operatingHoursService");
+var operatingHoursService = require("../services/operatingHoursService");
 var AnalyticResult = require("../models/analyticResult");
 var Department = require("../models/department");
+var RoleConstants = require("../models/roleConstants");
 
 
+router.get('/load', function(req, res) {
+  winston.debug(req.projectid);
+  // redirect to widget
+});
 
-  router.get('/', function(req, res) {
-    winston.info(req.projectid);
+router.get('/', function(req, res) {
+    winston.debug(req.projectid);
 
 
     var availableUsers = function() {
-      winston.info('availableUsers:');
+      winston.debug('availableUsers:');
       return new Promise(function (resolve, reject) {
       operatingHoursService.projectIsOpenNow(req.projectid, function (isOpen, err) {    
-          winston.info('isOpen:'+ isOpen);
+          winston.debug('isOpen:'+ isOpen);
           if (isOpen) {            
-            Project_user.find({ id_project: req.projectid, user_available: true }).
+            Project_user.find({ id_project: req.projectid, user_available: true, role: { $in : [RoleConstants.OWNER, RoleConstants.ADMIN, RoleConstants.AGENT]} }).
               populate('id_user').
               exec(function (err, project_users) {
-                winston.info('project_users:'+ project_users);
+                winston.debug('project_users:'+ project_users);
                 if (project_users) {    
                   user_available_array = [];
                   project_users.forEach(project_user => {
                     if (project_user.id_user) {
                       user_available_array.push({ "id": project_user.id_user._id, "firstname": project_user.id_user.firstname });
                     } else {
-                      winston.info('else:');
+                      winston.debug('else:');
                     }
                   });      
-                  winston.info('user_available_array:'+ JSON.stringify(user_available_array));          
+                  winston.debug('user_available_array:'+ JSON.stringify(user_available_array));          
                   return resolve(user_available_array);
                 }
               });
@@ -69,7 +74,7 @@ var Department = require("../models/department");
   // };
   
 
-
+// TOOD add labels
     Promise.all([
       Project.findById(req.projectid).select('-settings'),
       availableUsers(),

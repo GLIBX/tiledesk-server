@@ -12,19 +12,27 @@ const requestEvent = new RequestEvent();
 requestEvent.on('request.create.simple', function(request) {
 
 
-    winston.debug('requestEvent here');
+    winston.debug('requestEvent here', request);
 
      // {path:'lead'}
      // ,{path:'participantsObj'}   //rror: error getting requestCast to ObjectId failed for value "bot_5cb82e4a25143b3a573c8701" at path "_id" for model "User" {"name":"CastError","stringValue":"\"bot_5cb82e4a25143b3a573c8701\"","kind":"ObjectId","value":"bot_5cb82e4a25143b3a573c8701"
-    request
+    // request
+    Request.findById(request.id)
         .populate(
-            // [           
-            {path:'department'}            
-            // ]
-        ,function (err, requestComplete){
+            [           
+            {path:'department'},
+            {path:'lead'},
+            {path:'participatingBots'},
+            {path:'participatingAgents'},          
+            // {path:'availableAgents'},                        
+            {path:'requester',populate:{path:'id_user'}}
+            ]
+        ).exec( function(err, requestComplete) {
+        // ,function (err, requestComplete){
 
             if (err){
                 winston.error('error getting request', err);
+                return requestEvent.emit('request.create', request);
             }
 
             winston.debug('emitting request.create', requestComplete.toObject());

@@ -27,7 +27,19 @@ class MessageService {
 
 
 
-  create(sender, senderFullname, recipient, text, id_project, createdBy, status, attributes, metadata) {
+   send(sender, senderFullname, recipient, text, id_project, createdBy, attributes, type) {
+       return this.create(sender, senderFullname, recipient, text, id_project, createdBy, MessageConstants.CHAT_MESSAGE_STATUS.SENDING, attributes, type);
+   }
+
+   upsert(id, sender, senderFullname, recipient, text, id_project, createdBy, status, attributes, type, metadata) {
+       if (!id) {
+           return this.create(sender, senderFullname, recipient, text, id_project, createdBy, status, attributes, type, metadata);
+       } else {
+            winston.debug("Message changeStatus", status);
+            return this.changeStatus(id, status);
+       }
+   }
+  create(sender, senderFullname, recipient, text, id_project, createdBy, status, attributes, type, metadata) {
 
     var that = this;
     return new Promise(function (resolve, reject) {
@@ -44,14 +56,15 @@ class MessageService {
                 sender: sender,
                 senderFullname: senderFullname,
                 recipient: recipient,
+                type: type,
                 // recipientFullname: recipientFullname,
                 text: text,
                 id_project: id_project,
                 createdBy: createdBy,
                 updatedBy: createdBy,
                 status : status,
-                attributes: attributes,
-                metadata: metadata
+                metadata: metadata,
+                attributes: attributes
             });
             
             // winston.debug("create new message", newMessage);
@@ -105,6 +118,7 @@ class MessageService {
     }
   }
 
+//   TODO must update also message.attributes from chat21
   changeStatus(message_id, newstatus) {
     var that = this;
     return new Promise(function (resolve, reject) {
@@ -116,7 +130,7 @@ class MessageService {
               winston.error(err);
               return reject(err);
             }
-            messageEvent.emit('message.update',updatedMessage);
+            messageEvent.emit('message.update.simple',updatedMessage);
            // winston.debug("updatedMessage", updatedMessage);
 
            that.emitMessage(updatedMessage);

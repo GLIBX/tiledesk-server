@@ -1,7 +1,6 @@
 //During the test the env variable is set to test
 process.env.NODE_ENV = 'test';
 
-// require('./controllers/todo.controller.test.js');
 var expect = require('chai').expect;
 
 var assert = require('chai').assert;
@@ -44,6 +43,7 @@ describe('FaqService()', function () {
               newFaq.save(function (err, savedFaq) {
                 winston.debug("resolve", savedFaq.toObject());
                 expect(savedBot.name).to.equal("testbot");
+                expect(savedBot.secret).to.not.equal(null);
                 expect(savedFaq.question).to.equal("question");
                
                 var query = { "id_project": savedProject._id };

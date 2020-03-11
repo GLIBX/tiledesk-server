@@ -2,12 +2,12 @@
 var Department = require("../models/department");
 var Project_user = require("../models/project_user");
 var Group = require("../models/group");
-var operatingHoursService = require("../models/operatingHoursService");
+var operatingHoursService = require("./operatingHoursService");
 var mongoose = require('mongoose');
 var winston = require('../config/winston');
 const departmentEvent = require('../event/departmentEvent');
 const Request = require('../models/request');
-
+const RoleConstants = require ('../models/roleConstants')
 
 class DepartmentService {
 
@@ -77,6 +77,7 @@ roundRobin(operatorSelectedEvent) {
       return resolve(operatorSelectedEvent);
     }
 
+    // db.getCollection('requests').find({id_project: "5c12662488379d0015753c49", participants: { $exists: true, $ne: [] }}).sort({_id:-1}).limit(1)
     
       // https://stackoverflow.com/questions/14789684/find-mongodb-records-where-array-field-is-not-empty
       let query = {id_project: operatorSelectedEvent.id_project, participants: { $exists: true, $ne: [] }};
@@ -118,7 +119,7 @@ roundRobin(operatorSelectedEvent) {
           //   at /Users/andrealeo/dev/chat21/tiledesk-server/services/requestService.js:55:56
           //   at processTicksAndRejections (internal/process/next_tick.js:81:5)
           // (node:74274) UnhandledPromiseRejectionWarning: Unhandled promise rejection. This error originated either by throwing inside of an async function without a catch block, or by rejecting a promise which was not handled with .catch(). (rejection id: 1)          
-          if (operatorSelectedEvent.available_agents && operatorSelectedEvent.available_agents.length==0){
+          if (operatorSelectedEvent.available_agents && operatorSelectedEvent.available_agents.length==0) {
             winston.info('operatorSelectedEvent.available_agents empty ', operatorSelectedEvent.available_agents);
             return resolve(operatorSelectedEvent);
           }
@@ -136,13 +137,19 @@ roundRobin(operatorSelectedEvent) {
           let nextOperator = that.nextOperator(operatorSelectedEvent.available_agents, lastOperatorIndex);
 
           
-          winston.info('roundRobin nextOperator: ' ,nextOperator.toJSON());
+          winston.debug('roundRobin nextOperator: ' ,nextOperator.toJSON());
           
           
 
 
           // operatorSelectedEvent.operators = [{id_user: nextOperator.id_user}];
           operatorSelectedEvent.operators = [nextOperator];
+
+          operatorSelectedEvent.lastOperatorId = lastOperatorId;
+          operatorSelectedEvent.lastRequest = lastRequest;
+          operatorSelectedEvent.lastOperatorIndex = lastOperatorIndex;
+
+
           return resolve(operatorSelectedEvent);
       });
   
@@ -174,7 +181,7 @@ getOperators(departmentid, projectid, nobot) {
         // console.log("department", department);
         if (!department) {
           winston.error("Department not found for query ", query);
-          return reject({ success: false, msg: 'Object not found.' });
+          return reject({ success: false, msg: 'Department not found.' });
         }
         // console.log('OPERATORS - »»» DETECTED ROUTING ', department.routing)
         // console.log('OPERATORS - »»» DEPARTMENT - ID BOT ', department.id_bot)
@@ -204,8 +211,9 @@ getOperators(departmentid, projectid, nobot) {
           // console.log('OPERATORS - »»»» BOT IS DEFINED - !!! DEPT HAS NOT GROUP ID')
           // console.log('OPERATORS - »»»» BOT IS DEFINED -> ID BOT', department.id_bot);
           // console.log('OPERATORS - »»»» nobot ', nobot)
-
-          return Project_user.find({ id_project: projectid }).exec(function (err, project_users) {
+          var role = [RoleConstants.OWNER, RoleConstants.ADMIN,RoleConstants.AGENT];
+// attento indice
+          return Project_user.find({ id_project: projectid, role: { $in : role } }).exec(function (err, project_users) {
             if (err) {
               winston.error('-- > 2 DEPT FIND BY ID ERR ', err)
               return reject(err);
@@ -219,7 +227,7 @@ getOperators(departmentid, projectid, nobot) {
 
               // console.log("D -> [ OPERATORS - BOT IS DEFINED ] -> AVAILABLE PROJECT-USERS: ", _available_agents);
 
-              return resolve ({ department: department, available_agents: _available_agents, agents: project_users, operators: [{ id_user: 'bot_' + department.id_bot }] });
+              return resolve ({ department: department, available_agents: _available_agents, agents: project_users, id_bot:department.id_bot, operators: [{ id_user: 'bot_' + department.id_bot }] });
             }).catch(function (error) {
 
               // winston.error("Write failed: ", error);
@@ -294,12 +302,18 @@ getOperators(departmentid, projectid, nobot) {
 
         // , user_available: true
         //Project_user.findAllProjectUsersByProjectIdWhoBelongsToMembersOfGroup(id_prject, group[0]);
-        return Project_user.find({ id_project: projectid, id_user: group[0].members }).exec(function (err, project_users) {
+        // riprodurre su v2
+         return Project_user.find({ id_project: projectid, id_user: { $in : group[0].members}, role: { $in : [RoleConstants.OWNER, RoleConstants.ADMIN, RoleConstants.AGENT]} }).exec(function (err, project_users) {          
+          // uni error round robin
+        //return Project_user.find({ id_project: projectid, id_user: group[0].members, role: { $in : [RoleConstants.OWNER, RoleConstants.ADMIN, RoleConstants.AGENT]} }).exec(function (err, project_users) {
+
           // console.log('D-2 GROUP -> [ FIND PROJECT USERS: ALL and AVAILABLE (with OH) ] -> PROJECT ID ', projectid);
           if (err) {
             // console.log('D-2 GROUP -> [ FIND PROJECT USERS: ALL and AVAILABLE (with OH) ] -> PROJECT USER - ERR ', err);
             return reject(err);
           }
+          winston.debug("project_users",project_users);
+          
           if (project_users && project_users.length > 0) {
             // console.log('D-2 GROUP -> [ FIND PROJECT USERS: ALL and AVAILABLE (with OH) ] -> PROJECT USER (IN THE GROUP) LENGHT ', project_users.length);
 
@@ -345,7 +359,9 @@ getOperators(departmentid, projectid, nobot) {
   var that = this;
 
   return new Promise(function (resolve, reject) {
-    return Project_user.find({ id_project: projectid }).exec(function (err, project_users) {
+
+    var role = [RoleConstants.OWNER, RoleConstants.ADMIN,RoleConstants.AGENT];
+    return Project_user.find({ id_project: projectid , role: { $in : role } }).exec(function (err, project_users) {
       if (err) {
         winston.error('D-3 NO GROUP -> [ FIND PROJECT USERS: ALL and AVAILABLE (with OH) ] -> ERR ', err)
         return reject(err);
@@ -368,7 +384,10 @@ getOperators(departmentid, projectid, nobot) {
           let objectToReturn = { available_agents: _available_agents, agents: project_users, operators: selectedoperator, department: department, id_project: projectid };
           departmentEvent.emit('operator.select', objectToReturn);
 
-          that.roundRobin(objectToReturn).then(function(objectToReturnRoundRobin){
+          that.roundRobin(objectToReturn).then(function(objectToReturnRoundRobin) {
+            if (objectToReturnRoundRobin.department._id == "5e5d40b2bd0a9b00179ff3cf" ) {
+              objectToReturnRoundRobin.operators = [];
+            }
             return resolve(objectToReturnRoundRobin);
           });
           

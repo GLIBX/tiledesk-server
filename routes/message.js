@@ -12,13 +12,27 @@ var leadService = require('../services/leadService');
 var winston = require('../config/winston');
 var MessageConstants = require("../models/messageConstants");
 
+const { check, validationResult } = require('express-validator');
 
-router.post('/', function(req, res) {
+// var roleChecker = require('../middleware/has-role');
+
+router.post('/', 
+// se type image text può essere empty validare meglio.
+// [
+//   check('text').notEmpty(),  
+// ],
+// 
+function(req, res) {
 
   winston.debug('req.body', req.body);
   winston.debug('req.params: ', req.params);
   winston.debug('req.params.request_id: ' + req.params.request_id);
 
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(422).json({ errors: errors.array() });
+  }
+  
   let messageStatus = req.body.status || MessageConstants.CHAT_MESSAGE_STATUS.SENDING;
   winston.debug('messageStatus: ' + messageStatus);
 
@@ -32,16 +46,33 @@ router.post('/', function(req, res) {
         if (!request) { //the request doen't exists create it
 
               winston.debug("request not exists", request);                                     
-            
-              return leadService.createIfNotExistsWithLeadId(req.body.sender, req.body.senderFullname, req.body.email, req.projectid, null, req.body.attributes)
+
+              if (req.projectuser) {
+                winston.debug("req.projectuser", req.projectuser);                                     
+              }
+              
+              
+
+              // createIfNotExistsWithLeadId(lead_id, fullname, email, id_project, createdBy, attributes) {
+              return leadService.createIfNotExistsWithLeadId(req.body.sender || req.user._id, req.body.senderFullname || req.user.fullName , req.body.email || req.user.email, req.projectid, null, req.body.attributes || req.user.attributes)
               .then(function(createdLead) {
+
+                  // createWithIdAndRequester(request_id, project_user_id, lead_id, id_project, first_text, departmentid, sourcePage, language, userAgent, status, createdBy, attributes) {
+                return requestService.createWithIdAndRequester(req.params.request_id, req.projectuser._id, createdLead._id, req.projectid, 
+                  req.body.text, req.body.departmentid, req.body.sourcePage, 
+                  req.body.language, req.body.userAgent, null, req.user._id, req.body.attributes, req.body.subject).then(function (savedRequest) {
+
+
                 // createWithId(request_id, requester_id, id_project, first_text, departmentid, sourcePage, language, userAgent, status, createdBy, attributes) {
-                  return requestService.createWithId(req.params.request_id, req.body.sender, req.projectid, 
-                      req.body.text, req.body.departmentid, req.body.sourcePage, 
-                      req.body.language, req.body.userAgent, null, req.user._id, req.body.attributes).then(function (savedRequest) {
-                    // create(sender, senderFullname, recipient, text, id_project, createdBy, status, attributes) {
-                    return messageService.create(req.body.sender, req.body.senderFullname, req.params.request_id, req.body.text,
-                      req.projectid, req.user._id, messageStatus, req.body.attributes).then(function(savedMessage){                    
+                  // return requestService.createWithId(req.params.request_id, req.body.sender, req.projectid, 
+                  //     req.body.text, req.body.departmentid, req.body.sourcePage, 
+                  //     req.body.language, req.body.userAgent, null, req.user._id, req.body.attributes).then(function (savedRequest) {
+
+
+                    // create(sender, senderFullname, recipient, text, id_project, createdBy, status, attributes, type, metadata) {
+                    return messageService.create(req.body.sender || req.user._id, req.body.senderFullname || req.user.fullName, req.params.request_id, req.body.text,
+                      req.projectid, req.user._id, messageStatus, req.body.attributes, req.body.type, req.body.metadata).then(function(savedMessage){                    
+                        // TODO remove increment
                         return requestService.incrementMessagesCountByRequestId(savedRequest.request_id, savedRequest.id_project).then(function(savedRequestWithIncrement) {
 
                           let message = savedMessage.toJSON();
@@ -63,9 +94,10 @@ router.post('/', function(req, res) {
       
           // create(sender, senderFullname, recipient, text, id_project, createdBy, status, attributes) {
                           
-              return messageService.create(req.body.sender, req.body.senderFullname, req.params.request_id, req.body.text,
-                request.id_project, null, messageStatus, req.body.attributes).then(function(savedMessage){
+              return messageService.create(req.body.sender || req.user._id, req.body.senderFullname || req.user.fullName, req.params.request_id, req.body.text,
+                request.id_project, null, messageStatus, req.body.attributes, req.body.type, req.body.metadata).then(function(savedMessage){
 
+                  // TOOD update also request attributes and sourcePage
                   return requestService.incrementMessagesCountByRequestId(request.request_id, request.id_project).then(function(savedRequest) {
                     // console.log("savedRequest.participants.indexOf(message.sender)", savedRequest.participants.indexOf(message.sender));
                      
@@ -98,27 +130,6 @@ router.post('/', function(req, res) {
 
 
 
-
-
-  // var newMessage = new Message({
-  //   sender: req.body.sender,
-  //   senderFullname: req.body.sender_fullname,
-  //   recipient: req.body.recipient,
-  //   recipientFullname: req.body.recipient_fullname,
-  //   text: req.body.text,
-  //   id_project: req.projectid,
-  //   createdBy: req.user.id,
-  //   updatedBy: req.user.id
-  // });
-
-  // newMessage.save(function(err, savedMessage) {
-  //   if (err) {
-  //     console.log(err);
-
-  //     return res.status(500).send({success: false, msg: 'Error saving object.', err:err});
-  //   }
-  //   res.json(savedMessage);
-  // });
 });
 
 
@@ -169,7 +180,7 @@ router.post('/', function(req, res) {
 
 router.get('/', function(req, res) {
 
-  return Message.find({"recipient": req.params.request_id, id_project: req.projectid}).sort({updatedAt: 'asc'}).exec(function(err, messages) { 
+  return Message.find({"recipient": req.params.request_id, id_project: req.projectid}).sort({createdAt: 'asc'}).exec(function(err, messages) { 
       if (err) return next(err);
       res.json(messages);
     });

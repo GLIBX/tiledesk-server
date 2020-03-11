@@ -1,7 +1,6 @@
 //During the test the env variable is set to test
 process.env.NODE_ENV = 'test';
 
-// require('./controllers/todo.controller.test.js');
 var expect = require('chai').expect;
 
 var assert = require('chai').assert;
@@ -58,6 +57,7 @@ describe('messageService()', function () {
     // this.timeout(10000);
 
       projectService.create("test1", userid).then(function(savedProject) {
+        // attento reqid
         requestService.createWithId("request_id-createTwoMessage", "requester_id1", savedProject._id, "first_text").then(function(savedRequest) {
          messageService.create(userid, "test sender", savedRequest.request_id, "hello",
             savedProject._id, userid).then(function(savedMessage){

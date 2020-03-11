@@ -1,12 +1,13 @@
 var mongoose = require('mongoose');
 var Schema = mongoose.Schema;
 var bcrypt = require('bcrypt-nodejs');
+var winston = require('../config/winston');
 
 var UserSchema = new Schema({
     _id: Schema.Types.ObjectId,
     email: {
         type: String,
-        unique: true,
+        unique: true,//remove unique on db
         required: true,
         index: true
     },
@@ -14,7 +15,7 @@ var UserSchema = new Schema({
         type: String,
         required: true,
         // https://stackoverflow.com/questions/12096262/how-to-protect-the-password-field-in-mongoose-mongodb-so-it-wont-return-in-a-qu
-        select: false //ATTENZIONE TESTA BENE QUESTA COSA
+        select: false 
     },
     firstname: {
         type: String,
@@ -31,12 +32,35 @@ var UserSchema = new Schema({
     resetpswrequestid: {
         type: String,
     },
+    signedInAt: {
+        type:Date
+    },
+
+    // db.users.find({authUrl: {$exists : false }}).forEach(function(mydoc) {
+    //     db.users.update({_id: mydoc._id}, {$set: {authUrl: Math.random().toString(36).substring(2) + Date.now().toString(36)}})
+    //   })
+
+    authUrl: {
+        type: String,
+        index:true
+    },
+    attributes: {
+        type: Object,
+    },
+    // authType: { // update db old data
+    //     type: String,
+    //     index:true,
+    //     default: 'email_password'
+    // },
     // auth: {
     //     type: Schema.Types.ObjectId,
     //     ref: 'auth',
     //     //required: true
-    //   },
-});
+    //   },       
+    },{
+      timestamps: true
+    }
+);
 
 // UserSchema.set('toJSON', {
 //     transform: function(doc, ret, opt) {
@@ -78,10 +102,19 @@ UserSchema.virtual('fullName').get(function () {
     return (this.firstname || '') + ' ' + (this.lastname || '');
   });
   
-var UserModel = mongoose.model('User', UserSchema);
+
+//UserSchema.index({ email: 1, authType: 1 }, { unique: true }); 
+
+var UserModel = mongoose.model('user', UserSchema);
+
 
 // UserModel.getFullname = function () {
 //     return 
 // };
+
+if (process.env.MONGOOSE_SYNCINDEX) {
+    UserModel.syncIndexes();
+    winston.info("UserModel syncIndexes")
+  }
 
 module.exports = UserModel;

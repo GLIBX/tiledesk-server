@@ -1,11 +1,19 @@
 var mongoose = require('mongoose');
 var Schema = mongoose.Schema;
+var winston = require('../config/winston');
+
+/*
+Leads are useful for representing logged-out users of your application. 
+As soon as a visitor starts a conversation with you, or replies to a visitor auto message, they become a lead. 
+You can follow up with leads via email if they share their email address with you.
+*/
 
 var LeadSchema = new Schema({
   
   lead_id: { 
     type: String,
-    required: true
+    required: true,
+    index: true
   },
   fullname: {
     type: String,
@@ -32,13 +40,27 @@ var LeadSchema = new Schema({
   createdBy: {
     type: String,
     required: true
-  }
+  },
+  status: {
+    type: Number,
+    required: false,
+    default: 100,
+    index: true
+  }, 
 },{
   timestamps: true
 }
 );
 
 LeadSchema.index({fullname: 'text', email: 'text'},
- {"name":"fulltext","default_language": "italian","language_override": "dummy"}); // schema level
+ {"name":"lead_fulltext","default_language": "italian","language_override": "dummy"}); // schema level
 
-module.exports = mongoose.model('lead', LeadSchema);
+
+ var lead = mongoose.model('lead', LeadSchema);
+
+ if (process.env.MONGOOSE_SYNCINDEX) {
+  lead.syncIndexes();
+  winston.info("lead syncIndexes")
+}
+
+module.exports = lead;

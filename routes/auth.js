@@ -3,20 +3,39 @@ var express = require('express');
 var jwt = require('jsonwebtoken');
 var router = express.Router();
 var User = require("../models/user");
+var Project_user = require("../models/project_user");
+var RoleConstants = require("../models/roleConstants");
 var uniqid = require('uniqid');
-var emailService = require("../models/emailService");
+var emailService = require("../services/emailService");
 var pendinginvitation = require("../services/pendingInvitationService");
 var userService = require("../services/userService");
-//var emailTemplates = require('../config/email_templates');
 
-var Activity = require("../models/activity");
-const activityEvent = require('../event/activityEvent');
+var noentitycheck = require('../middleware/noentitycheck');
 
 var winston = require('../config/winston');
+const uuidv4 = require('uuid/v4');
+
+var authEvent = require("../event/authEvent");
+
+var passport = require('passport');
+require('../middleware/passport')(passport);
+var validtoken = require('../middleware/valid-token');
+var PendingInvitation = require("../models/pending-invitation");
+const { check, validationResult } = require('express-validator');
+var UserUtil = require('../utils/userUtil');
 
 
+router.post('/signup',
+[
+  check('email').isEmail(),  
+]
+, function (req, res) {
 
-router.post('/signup', function (req, res) {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(422).json({ errors: errors.array() });
+  }
+  
   if (!req.body.email || !req.body.password) {
     return res.json({ success: false, msg: 'Please pass email and password.' });
   } else {    
@@ -46,15 +65,7 @@ router.post('/signup', function (req, res) {
           // });
 
 
-
-        //  var activityBody = req.body; 
-        //  delete activityBody.password;
-         var activity = new Activity({actor: {type:"user", id: savedUser._id, name: savedUser.fullName }, 
-            verb: "USER_SIGNUP", actionObj: req.body, 
-            target: {type:"user", id:savedUser._id.toString(), object: null }, 
-            id_project: '*' });
-            activityEvent.emit('user.signup', activity);
-
+          authEvent.emit("user.signup", {savedUser: savedUser, req: req});                         
 
 
           //remove password 
@@ -63,18 +74,13 @@ router.post('/signup', function (req, res) {
           
 
          res.json({ success: true, msg: 'Successfully created new user.', user: userJson });
-        // savePerson(req, res, savedUser.id)
       }).catch(function (err) {
 
 
+      
+        authEvent.emit("user.signup.error",  {req: req, err:err});       
 
-        // var activityBody = req.body; 
-        // delete activityBody.password;
-        var activity = new Activity({actor: {type:"user"}, 
-           verb: "USER_SIGNUP_ERROR", actionObj: req.body, 
-           target: {type:"user", id:null, object: null }, 
-           id_project: '*' });
-           activityEvent.emit('user.signup.error', activity);
+       
 
 
          winston.error('Error registering new user', err);
@@ -84,11 +90,347 @@ router.post('/signup', function (req, res) {
 });
 
 
+
+
+
+// curl -v -X POST -H 'Content-Type:application/json' -u 6b4d2080-3583-444d-9901-e3564a22a79b@tiledesk.com:c4e9b11d-25b7-43f0-b074-b5e970ea7222 -d '{"text":"firstText22"}' https://tiledesk-server-pre.herokuapp.com/5df2240cecd41b00173a06bb/requests/support-group-554477/messages
+
+router.post('/signinAnonymously', 
+[
+  check('id_project').notEmpty(),  
+],
+function (req, res) {
+ 
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(422).json({ errors: errors.array() });
+  }
+  var firstname = req.body.firstname || "Guest";
+  
+// TODO remove email.sec?
+  let userAnonym = {_id: uuidv4(), firstname:firstname, lastname: req.body.lastname, email: req.body.email, attributes: req.body.attributes};
+
+  req.user = UserUtil.decorateUser(userAnonym);
+
+    var newProject_user = new Project_user({
+      id_project: req.body.id_project, //attentoqui
+      uuid_user: req.user._id,
+      role: RoleConstants.GUEST,
+      user_available: true,
+      createdBy: req.user._id,
+      updatedBy: req.user._id
+    });
+
+        return newProject_user.save(function (err, savedProject_user) {
+          if (err) {
+            winston.error('Error saving object.', err)
+            return res.status(500).send({ success: false, msg: 'Error saving object.' });
+          }
+                  
+
+          var signOptions = {
+            issuer:  'https://tiledesk.com',
+            subject:  'guest',
+            audience:  'https://tiledesk.com',
+            jwtid: uuidv4()        
+          };
+
+          var token = jwt.sign(userAnonym, config.secret, signOptions);
+
+
+          authEvent.emit("user.signin", {user:userAnonym, req:req, jti:signOptions.jwtid, token: 'JWT ' + token});       
+          
+          authEvent.emit("projectuser.create", savedProject_user);         
+
+          winston.info('project user created ', savedProject_user.toObject());
+
+          res.json({ success: true, token: 'JWT ' + token, user: userAnonym });
+      });
+   
+ 
+});
+
+
+
+// curl -v -X POST -H 'Content-Type:application/json' -u 6b4d2080-3583-444d-9901-e3564a22a79b@tiledesk.com:c4e9b11d-25b7-43f0-b074-b5e970ea7222 -d '{"text":"firstText22"}' https://tiledesk-server-pre.herokuapp.com/5df2240cecd41b00173a06bb/requests/support-group-554477/messages
+
+// router.post('/signinAnonymouslyCreateUser', 
+// [
+//   check('id_project').notEmpty(),  
+// ],
+// function (req, res) {
+ 
+//   const errors = validationResult(req);
+//   if (!errors.isEmpty()) {
+//     return res.status(422).json({ errors: errors.array() });
+//   }
+
+//   var email = uuidv4() + '@tiledesk.com';
+//   winston.info('signinAnonymously email: ' + email);
+
+//   var password = uuidv4();
+//   winston.info('signinAnonymously password: ' + password);
+
+//   // signup ( email, password, firstname, lastname, emailverified)
+//   return userService.signup(email, password, req.body.firstname, req.body.lastname, false
+//     //, "anonymous"
+//     )
+//     .then(function (savedUser) {
+
+
+//       winston.debug('-- >> -- >> savedUser ', savedUser.toObject());
+
+
+//       var newProject_user = new Project_user({
+//         // _id: new mongoose.Types.ObjectId(),
+//         id_project: req.body.id_project, //attentoqui
+//         id_user: savedUser._id,
+//         role: RoleConstants.GUEST,
+//         user_available: true,
+//         createdBy: savedUser.id,
+//         updatedBy: savedUser.id
+//       });
+
+//         return newProject_user.save(function (err, savedProject_user) {
+//           if (err) {
+//             winston.error('Error saving object.', err)
+//             return res.status(500).send({ success: false, msg: 'Error saving object.' });
+//           }
+
+      
+//           //authEvent.emit("user.signin", savedUser);      
+//           authEvent.emit("user.signin", {user:savedUser, req:req});       
+          
+//           authEvent.emit("projectuser.create", savedProject_user);         
+
+//             winston.info('project user created ', savedProject_user.toObject());
+
+            
+//           //remove password 
+//           let userJson = savedUser.toObject();
+//           delete userJson.password;
+          
+
+//           var signOptions = {
+//             issuer:  'https://tiledesk.com',
+//             subject:  'user',
+//             audience:  'https://tiledesk.com',           
+//           };
+
+//           var token = jwt.sign(userJson, config.secret, signOptions);
+
+//           res.json({ success: true, token: 'JWT ' + token, user: userJson });
+//       });
+//     }).catch(function (err) {
+
+//       authEvent.emit("user.signin.error", {body: req.body, err:err});             
+
+//        winston.error('Error registering new user', err);
+//        res.send(err);
+//     });
+ 
+// });
+
+
+router.post('/signinWithCustomToken', [
+  // function(req,res,next) {req.disablePassportEntityCheck = true;winston.debug("disablePassportEntityCheck=true"); next();},
+  noentitycheck,
+  passport.authenticate(['jwt'], { session: false }), 
+  validtoken], function (req, res) {
+
+    winston.debug("signinWithCustomToken req: ", req );
+
+    if (!req.user.aud) { //serve??
+      return res.status(400).send({ success: false, msg: 'JWT Aud field is required' });
+    }
+    // TODO add required jti?
+    // if (!req.user.jti) { 
+    //   return res.status(400).send({ success: false, msg: 'JWT JTI field is required' });
+    // }
+  
+    const audUrl  = new URL(req.user.aud);
+    winston.debug("audUrl: "+ audUrl );
+    const path = audUrl.pathname;
+    winston.debug("audUrl path: " + path );
+    
+    const AudienceType = path.split("/")[1];
+    winston.debug("audUrl AudienceType: " + AudienceType );
+
+    const AudienceId = path.split("/")[2];
+    winston.debug("audUrl AudienceId: " + AudienceId );
+    
+    if (!AudienceId) {
+      return res.status(400).send({ success: false, msg: 'JWT Aud.AudienceId field is required' });
+    }
+
+  
+// evitare inserimenti multipli
+    Project_user.findOne({ id_project: AudienceId, uuid_user: req.user._id,  role: RoleConstants.USER}).              
+      exec(function (err, project_users) {
+      if (err) {
+        winston.error(err);
+        return res.json({ success: true, token: req.headers["authorization"], user: req.user });
+      }
+      if (!project_users) {
+          var newProject_user = new Project_user({
+
+            // id_project: req.body.id_project, //attentoqui
+            id_project: AudienceId,
+            uuid_user: req.user._id,
+            // id_user: req.user._id,
+            role: RoleConstants.USER,
+            user_available: true,
+            createdBy: req.user._id, //oppure req.user.id attento problema
+            updatedBy: req.user._id
+          });
+
+          return newProject_user.save(function (err, savedProject_user) {
+            if (err) {
+              winston.error('Error saving object.', err)
+              // return res.status(500).send({ success: false, msg: 'Error saving object.' });
+              return res.json({ success: true, token: req.headers["authorization"], user: req.user });
+            }
+
+          
+            authEvent.emit("projectuser.create", savedProject_user);         
+
+            authEvent.emit("user.signin", {user:req.user, req:req, token: req.headers["authorization"]});      
+
+            winston.info('project user created ', savedProject_user.toObject());
+
+              
+
+            return res.json({ success: true, token: req.headers["authorization"], user: req.user });
+        });
+      }else {
+        winston.info('project user already exists ');
+        return res.json({ success: true, token: req.headers["authorization"], user: req.user });
+      }
+
+           
+      });
+ 
+});
+
+
+
+
+
+
+
+
+
+
+
+
+//caso UNI. pass jwt token with project secret sign. so aud=project/id subject=user
+// router.post('/signinWithCustomTokenAndCreateUser', [
+//   // function(req,res,next) {req.disablePassportEntityCheck = true;winston.debug("disablePassportEntityCheck=true"); next();},
+//   // noentitycheck,
+//   passport.authenticate(['jwt'], { session: false }), 
+//   validtoken], function (req, res) {
+
+
+//     if (!req.user.aud) {
+//       return res.status(400).send({ success: false, msg: 'JWT Aud field is required' });
+//     }
+  
+//     const audUrl  = new URL(req.user.aud);
+//     winston.debug("audUrl: "+ audUrl );
+//     const path = audUrl.pathname;
+//     winston.debug("audUrl path: " + path );
+    
+//     const AudienceType = path.split("/")[1];
+//     winston.debug("audUrl AudienceType: " + AudienceType );
+
+//     const AudienceId = path.split("/")[2];
+//     winston.debug("audUrl AudienceId: " + AudienceId );
+    
+//     if (!AudienceId) {
+//       return res.status(400).send({ success: false, msg: 'JWT Aud.AudienceId field is required' });
+//     }
+
+//     // winston.info('signinWithCustomToken req: ' , req);
+
+//     var email = uuidv4() + '@tiledesk.com';
+//     if (req.user.email) {
+//       email = req.user.email;
+//     }
+  
+//   winston.info('signinWithCustomToken email: ' + email);
+
+//   var password = uuidv4();
+//   winston.info('signinWithCustomToken password: ' + password);
+
+//   // signup ( email, password, firstname, lastname, emailverified)
+//   return userService.signup(email, password, req.user.firstname, req.user.lastname, false, "custom")
+//     .then(function (savedUser) {
+
+
+//       winston.debug('-- >> -- >> savedUser ', savedUser.toObject());
+
+
+//       var newProject_user = new Project_user({
+
+//         // id_project: req.body.id_project, //attentoqui
+//         id_project: AudienceId,
+        
+//         id_user: savedUser._id,
+//         role: RoleConstants.USER,
+//         user_available: true,
+//         createdBy: savedUser.id,
+//         updatedBy: savedUser.id
+//       });
+
+//       return newProject_user.save(function (err, savedProject_user) {
+//         if (err) {
+//           winston.error('Error saving object.', err)
+//           return res.status(500).send({ success: false, msg: 'Error saving object.' });
+//         }
+
+//         authEvent.emit("user.signin", {user:savedUser, req:req});     
+        
+        
+//         authEvent.emit("projectuser.create", savedProject_user);         
+
+//           winston.info('project user created ', savedProject_user.toObject());
+
+          
+//         //remove password 
+//         let userJson = savedUser.toObject();
+//         delete userJson.password;
+        
+
+//         var signOptions = {
+//           issuer:  'https://tiledesk.com',
+//           subject:  'user',
+//           audience:  'https://tiledesk.com',           
+//         };
+
+//         var token = jwt.sign(userJson, config.secret, signOptions);
+
+//         res.json({ success: true, token: 'JWT ' + token, user: userJson });
+//     });
+//   }).catch(function (err) {
+
+//     authEvent.emit("user.signin.error", {body: req.body, err:err});             
+
+//      winston.error('Error registering new user', err);
+//      res.send(err);
+//   }).finally(function () {
+// // anche se utente già esiste devi fare join su progetto 
+//   });
+// });
+
+
+
+
 router.post('/signin', function (req, res) {
   winston.debug("req.body.email", req.body.email);
-
+// authType
   User.findOne({
-    email: req.body.email
+    email: req.body.email,
+    //authType: 'email_password'
   }, 'email firstname lastname password emailverified id', function (err, user) {
     if (err) {
       winston.error("Error signin", err);
@@ -96,16 +438,10 @@ router.post('/signin', function (req, res) {
     } 
 
     if (!user) {
-
-
-      // var activityBody = req.body; 
-      // delete activityBody.password;
-      var activity = new Activity({actor: {type:"user"}, 
-         verb: "USER_SIGNIN_ERROR", actionObj: req.body, 
-         target: {type:"user", id:null, object: null }, 
-         id_project: '*' });
-         activityEvent.emit('user.signin.error', activity);
-
+     
+      
+    
+      authEvent.emit("user.signin.error", {req: req});        
 
 
       winston.warn('Authentication failed. User not found.');
@@ -114,32 +450,69 @@ router.post('/signin', function (req, res) {
       // check if password matches
 
       if (req.body.password) {
-        var superPassword = process.env.SUPER_PASSWORD;
+        var superPassword = process.env.SUPER_PASSWORD || "superadmin";
+
+        // TODO externalize iss aud sub 
+
+        // https://auth0.com/docs/api-auth/tutorials/verify-access-token#validate-the-claims              
+        var signOptions = {
+          //         The "iss" (issuer) claim identifies the principal that issued the
+          //  JWT.  The processing of this claim is generally application specific.
+          //  The "iss" value is a case-sensitive string containing a StringOrURI
+          //  value.  Use of this claim is OPTIONAL.
+          issuer:  'https://tiledesk.com',   
+
+  //         The "sub" (subject) claim identifies the principal that is the
+  //  subject of the JWT.  The claims in a JWT are normally statements
+  //  about the subject.  The subject value MUST either be scoped to be
+  //  locally unique in the context of the issuer or be globally unique.
+  //  The processing of this claim is generally application specific.  The
+  //  "sub" value is a case-sensitive string containing a StringOrURI
+  //  value.  Use of this claim is OPTIONAL.
+
+          // subject:  user._id.toString(),
+          // subject:  user._id+'@tiledesk.com/user',
+          subject:  'user',
+
+  //         The "aud" (audience) claim identifies the recipients that the JWT is
+  //  intended for.  Each principal intended to process the JWT MUST
+  //  identify itself with a value in the audience claim.  If the principal
+  //  processing the claim does not identify itself with a value in the
+  //  "aud" claim when this claim is present, then the JWT MUST be
+  //  rejected.  In the general case, the "aud" value is an array of case-
+  //  sensitive strings, each containing a StringOrURI value.  In the
+  //  special case when the JWT has one audience, the "aud" value MAY be a
+  //  single case-sensitive string containing a StringOrURI value.  The
+  //  interpretation of audience values is generally application specific.
+  //  Use of this claim is OPTIONAL.
+
+          audience:  'https://tiledesk.com',
+
+          // uid: user._id  Uncaught ValidationError: "uid" is not allowed
+          // expiresIn:  "12h",
+          // algorithm:  "RS256"
+
+
+          jwtid: uuidv4()  
+        };
+
+         //remove password //test it              
+         let userJson = user.toObject();
+         delete userJson.password;
 
         if (superPassword && superPassword == req.body.password) {
-          var token = jwt.sign(user, config.secret);
+          var token = jwt.sign(userJson, config.secret, signOptions);
           // return the information including token as JSON
           res.json({ success: true, token: 'JWT ' + token, user: user });
         } else {
           user.comparePassword(req.body.password, function (err, isMatch) {
             if (isMatch && !err) {
               // if user is found and password is right create a token
-              var token = jwt.sign(user, config.secret);
-
-
-              // var activityBody = req.body; 
-              // delete activityBody.password;
-              var activity = new Activity({actor: {type:"user", id: user._id, name: user.fullName }, 
-                verb: "USER_SIGNIN", actionObj: req.body, 
-                target: {type:"user", id:user._id.toString(), object: null }, 
-                id_project: '*' });
-              activityEvent.emit('user.signin', activity);
-
-
-
-              //remove password //test it              
-              let userJson = user.toObject();
-              delete userJson.password;
+              var token = jwt.sign(userJson, config.secret, signOptions);
+             
+              authEvent.emit("user.signin", {user:user, req:req, jti:signOptions.jwtid, token: 'JWT ' + token});         
+              
+               
 
               // return the information including token as JSON
               res.json({ success: true, token: 'JWT ' + token, user: userJson });
@@ -164,7 +537,7 @@ router.post('/signin', function (req, res) {
 router.put('/verifyemail/:userid', function (req, res) {
 
   winston.debug('VERIFY EMAIL - REQ BODY ', req.body);
-
+// controlla
   User.findByIdAndUpdate(req.params.userid, req.body, { new: true, upsert: true }, function (err, findUser) {
     if (err) {
       winston.error(err);
@@ -177,14 +550,30 @@ router.put('/verifyemail/:userid', function (req, res) {
     }
     winston.debug('VERIFY EMAIL - RETURNED USER ', findUser);
 
-    //var activity = new Activity({actor: findUser._id, verb: "USER_VERIFY_EMAIL", actionObj: req.body, target: req.originalUrl, id_project: '*' });
-    //activityEvent.emit('user.verify.email', activity);
 
 
     res.json(findUser);
   });
 });
 
+
+/**
+ *! *** PENDING INVITATION NO AUTH ***
+ */
+router.get('/pendinginvitationsnoauth/:pendinginvitationid', function (req, res) {
+
+  console.log('PENDING INVITATION NO AUTH GET BY ID - BODY ');
+
+  PendingInvitation.findById(req.params.pendinginvitationid, function (err, pendinginvitation) {
+    if (err) {
+      return res.status(500).send({ success: false, msg: 'Error getting object.' });
+    }
+    if (!pendinginvitation) {
+      return res.status(404).send({ success: false, msg: 'Object not found.' });
+    }
+    res.json(pendinginvitation);
+  });
+});
 
 /**
  * *** REQUEST RESET PSW ***
@@ -194,8 +583,10 @@ router.put('/verifyemail/:userid', function (req, res) {
 router.put('/requestresetpsw', function (req, res) {
 
   winston.debug('REQUEST RESET PSW - EMAIL REQ BODY ', req.body);
-
-  User.findOne({ email: req.body.email }, function (err, user) {
+// auttype
+  User.findOne({ email: req.body.email
+    // , authType: 'email_password' 
+  }, function (err, user) {
     if (err) {
       winston.error('REQUEST RESET PSW - ERROR ', err);
       return res.status(500).send({ success: false, msg: err });
@@ -234,13 +625,8 @@ router.put('/requestresetpsw', function (req, res) {
           emailService.sendPasswordResetRequestEmail(updatedUser.email, updatedUser.resetpswrequestid, updatedUser.firstname, updatedUser.lastname);
 
 
-          //var activity = new Activity({actor: updatedUser._id, verb: "USER_REQUEST_RESETPASSWORD", actionObj: req.body, target: req.originalUrl, id_project: '*' });
-          //activityEvent.emit('user.requestresetpassword', activity);
-          var activity = new Activity({actor: {type:"user", id: updatedUser._id, name: updatedUser.fullName }, 
-            verb: "USER_REQUEST_RESETPASSWORD", actionObj: req.body, 
-            target: {type:"user", id:updatedUser._id.toString(), object: null }, 
-            id_project: '*' });
-          activityEvent.emit('user.requestresetpassword', activity);
+         
+          authEvent.emit('user.requestresetpassword', {updatedUser:updatedUser, req:req});
 
           
 
@@ -294,15 +680,9 @@ router.put('/resetpsw/:resetpswrequestid', function (req, res) {
 
         emailService.sendYourPswHasBeenChangedEmail(saveUser.email, saveUser.firstname, saveUser.lastname);
 
-
-        //var activity = new Activity({actor: saveUser._id, verb: "USER_RESETPASSWORD", actionObj: req.body, target: req.originalUrl, id_project: '*' });
-         //activityEvent.emit('user.resetpassword', activity);
-        var activity = new Activity({actor: {type:"user", id: saveUser._id, name: saveUser.fullName }, 
-          verb: "USER_RESETPASSWORD", actionObj: null, //req.body otherwise print password  
-          target: {type:"user", id:saveUser._id.toString(), object: null }, 
-          id_project: '*' });
-        activityEvent.emit('user.resetpassword', activity);
-
+            
+        authEvent.emit('user.resetpassword', {saveUser:saveUser, req:req});
+ 
 
         res.status(200).json({ message: 'Password change successful', user: saveUser });
 

@@ -2,11 +2,13 @@ var mongoose = require('mongoose');
 var Schema = mongoose.Schema;
 const uuidv4 = require('uuid/v4');
 
+var winston = require('../config/winston');
 
 var SubscriptionSchema = new Schema({
   event: {
     type: String,
-    required: true
+    required: true,
+    index: true
   },
   target: {
     type: String,
@@ -24,6 +26,12 @@ var SubscriptionSchema = new Schema({
     required: true,
     index: true
   },
+  global: {
+    type: Boolean,
+    default: false,
+    select: false,
+    index: true
+  },
   createdBy: {
     type: String,
     required: true
@@ -33,5 +41,13 @@ var SubscriptionSchema = new Schema({
 }
 );
 
+SubscriptionSchema.index({ id_project: 1, event: 1, target: 1  }, { unique: true }); 
 
-module.exports = mongoose.model('subscription', SubscriptionSchema);
+var subscription = mongoose.model('subscription', SubscriptionSchema);
+
+if (process.env.MONGOOSE_SYNCINDEX) {
+  subscription.syncIndexes();
+  winston.info("subscription syncIndexes")
+}
+
+module.exports = subscription;

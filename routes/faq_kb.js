@@ -9,13 +9,12 @@ var winston = require('../config/winston');
 
 router.post('/', function (req, res) {
   // create(name, url, projectid, user_id, type)
-  faqService.create(req.body.name, req.body.url, req.projectid, req.user.id, req.body.external).then(function(savedFaq_kb) {
-    botEvent.emit('faqbot.create', savedFaq_kb);
-    if (savedFaq_kb.external===false) {     
+  faqService.create(req.body.name, req.body.url, req.projectid, req.user.id, req.body.type).then(function(savedFaq_kb) {
+    if (savedFaq_kb.type==="internal") {      
 
       faqService.createGreetingsAndOperationalsFaqs(savedFaq_kb._id, savedFaq_kb.createdBy, savedFaq_kb.id_project);
     } else {
-      console.log('external bot: ', savedFaq_kb);
+      winston.debug('external bot: ', savedFaq_kb);
     } 
     res.json(savedFaq_kb);
   });
@@ -36,37 +35,58 @@ router.post('/askbot', function (req, res) {
     if (!faq_kb) {
       return res.status(404).send({ success: false, msg: 'Object not found.' });
     }
-    winston.info('faq_kb ', faq_kb.toJSON());
-    winston.info('faq_kb.type :'+ faq_kb.type);
-    if (faq_kb.external ===false) {
+    winston.debug('faq_kb ', faq_kb.toJSON());
+    winston.debug('faq_kb.type :'+ faq_kb.type);
+    if (faq_kb.type =="internal") {
+
 
 
       
 
-      var query = { "id_project": req.projectid, "id_faq_kb": req.body.id_faq_kb };
+      var query = { "id_project": req.projectid, "id_faq_kb": req.body.id_faq_kb, "question": req.body.question};
 
-      query.$text = {"$search": req.body.question};
+      Faq.find(query) 
+      .lean().               
+       exec(function (err, faqs) {
+         if (err) {
+           return res.status(500).send({ success: false, msg: 'Error getting object.' });
+         }
+         if (faqs && faqs.length>0) {
+          winston.debug("faqs exact", faqs);              
+
+          var result = {hits:faqs};
+          res.json(result);
+         }else {
+          query = { "id_project": req.projectid, "id_faq_kb": req.body.id_faq_kb};
+
+          query.$text = {"$search": req.body.question};
        
-      winston.info('internal query: '+ query);
+          winston.debug('internal ft query: '+ query);
+    
+           Faq.find(query,  {score: { $meta: "textScore" } })  
+           .sort( { score: { $meta: "textScore" } } ) //https://docs.mongodb.com/manual/reference/operator/query/text/#sort-by-text-search-score
+           .lean().               
+            exec(function (err, faqs) {
+              if (err) {
+                return res.status(500).send({ success: false, msg: 'Error getting object.' });
+              }
+    
+               winston.debug("faqs", faqs);              
+    
+               var result = {hits:faqs};
+               res.json(result);
+            });
 
-       Faq.find(query,  {score: { $meta: "textScore" } })  
-       .sort( { score: { $meta: "textScore" } } ) //https://docs.mongodb.com/manual/reference/operator/query/text/#sort-by-text-search-score
-       .lean().               
-        exec(function (err, faqs) {
-          if (err) {
-            return res.status(500).send({ success: false, msg: 'Error getting object.' });
-          }
+            
+         }
 
-           winston.debug("faqs", faqs);              
+         
+       });
 
-           var result = {hits:faqs};
-           res.json(result);
-        });
-
+     
     }else {
       winston.info('external query: ');
-      return res.status(400).send({ success: false, msg: 'Error getting object.' });
-// TODO
+      return res.status(400).send({ success: false, msg: 'askbot on external bot.' });
     }
    
     
@@ -80,7 +100,24 @@ router.put('/:faq_kbid', function (req, res) {
 
   winston.debug(req.body);
 
-  Faq_kb.findByIdAndUpdate(req.params.faq_kbid, req.body, { new: true, upsert: true }, function (err, updatedFaq_kb) {
+  var update = {};
+  if (req.body.name!=undefined) {
+    update.name = req.body.name;
+  }
+  if (req.body.url!=undefined) {
+    update.url = req.body.url;
+  }
+  if (req.body.webhookUrl!=undefined) {
+    update.webhookUrl = req.body.webhookUrl;
+  }
+  if (req.body.type!=undefined) {
+    update.type = req.body.type;
+  }
+  if (req.body.trashed!=undefined) {
+    update.trashed = req.body.trashed;
+  }
+
+  Faq_kb.findByIdAndUpdate(req.params.faq_kbid, update, { new: true, upsert: true }, function (err, updatedFaq_kb) {
     if (err) {
       return res.status(500).send({ success: false, msg: 'Error updating object.' });
     }

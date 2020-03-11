@@ -1,16 +1,23 @@
 var mongoose = require('mongoose');
 var Schema = mongoose.Schema;
+var winston = require('../config/winston');
+
 
 var FaqSchema = new Schema({
   id_faq_kb: {
     type: String,
+    index: true
     // required: true
     // type: Schema.Types.ObjectId,
     // ref: 'faq_kb'
   },
+  intent: {
+    type: String,
+    required: false
+  },
   question: {
     type: String,
-    required: true
+    required: true 
   },
   answer: {
     type: String,
@@ -18,21 +25,25 @@ var FaqSchema = new Schema({
   },
   id_project: {
     type: String,
-    required: true
+    required: true,
+    index: true
   },
   topic: {
     type: String,
-    default: "default"
+    default: "default",
+    index: true
     // required: true
   },
   status: {
     type: String,
-    default: "live"
+    default: "live",
+    index: true
     // required: true
   },
   language: {
     type: String,
-    required: false
+    required: false,
+    index: true
   },
 
 //   "stats":{  
@@ -63,11 +74,17 @@ FaqSchema.virtual('faq_kb', {
 FaqSchema.index({question: 'text', answer: 'text'},
  {"name":"faq_fulltext","default_language": "italian","language_override": "language", weights: {question: 10,answer: 1}}); // schema level
 
- var Faq = mongoose.model('faq', FaqSchema);
+ var faq = mongoose.model('faq', FaqSchema);
 
- Faq.on('index', function(error) {
+ faq.on('index', function(error) {
   // "_id index cannot be sparse"
-  console.log('index', error);
+  winston.debug('index', error);
 });
 
-module.exports = Faq;
+if (process.env.MONGOOSE_SYNCINDEX) {
+  faq.syncIndexes();
+  winston.info("faq syncIndexes")
+}
+
+
+module.exports = faq;

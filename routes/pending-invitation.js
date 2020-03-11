@@ -3,13 +3,13 @@ var express = require('express');
 var router = express.Router();
 
 var passport = require('passport');
-require('../config/passport')(passport);
+require('../middleware/passport')(passport);
 var validtoken = require('../middleware/valid-token')
 // var pendingInvitationService = require("../services/pendingInvitationService");
-var emailService = require("../models/emailService");
+var emailService = require("../services/emailService");
+var winston = require('../config/winston');
 
-
-router.get('/resendinvite/:pendinginvitationid', [passport.authenticate(['basic', 'jwt'], { session: false }), validtoken], function (req, res) {
+router.get('/resendinvite/:pendinginvitationid', function (req, res) {
 
   PendingInvitation.findById(req.params.pendinginvitationid, function (err, pendinginvitation) {
     if (err) {
@@ -18,32 +18,32 @@ router.get('/resendinvite/:pendinginvitationid', [passport.authenticate(['basic'
     if (!pendinginvitation) {
       return res.status(404).send({ success: false, msg: 'Object not found.' });
     }
-    if(pendinginvitation) {
-    console.log('RESEND INVITE TO THE PENDING INVITATION: ', pendinginvitation);
-    console.log('RESEND INVITE - CURRENT PROJECT: ', req.project);
-    console.log('RESEND INVITE - CURRENT USER: ', req.user);
+    if (pendinginvitation) {
+      winston.debug('RESEND INVITE TO THE PENDING INVITATION: ', pendinginvitation);
+      winston.debug('RESEND INVITE - CURRENT PROJECT: ', req.project);
+      winston.debug('RESEND INVITE - CURRENT USER: ', req.user);
 
-    emailService.sendInvitationEmail_UserNotRegistered(pendinginvitation.email, req.user.firstname, req.user.lastname, req.project.name, req.project._id, pendinginvitation.role)
-    //                                                         // invited_user_email, currentUserFirstname, currentUserLastname, project_name, project_id, invited_user_role
-    // return pendingInvitationService.saveInPendingInvitation(pendinginvitation.email, req.user.firstname, req.user.lastname, req.project.name, req.project._id,  pendinginvitation.role)
-    // .then(function (savedPendingInvitation) {
-    //   return res.json({ msg: "User not found, save invite in pending ", pendingInvitation: savedPendingInvitation });
-    // })
-    // .catch(function (err) {
-    //   return res.send(err);
-    //   // return res.status(500).send(err);
-    // });
+      emailService.sendInvitationEmail_UserNotRegistered(pendinginvitation.email, req.user.firstname, req.user.lastname, req.project.name, req.project._id, pendinginvitation.role, pendinginvitation._id)
+      //                                                         // invited_user_email, currentUserFirstname, currentUserLastname, project_name, project_id, invited_user_role
+      // return pendingInvitationService.saveInPendingInvitation(pendinginvitation.email, req.user.firstname, req.user.lastname, req.project.name, req.project._id,  pendinginvitation.role)
+      // .then(function (savedPendingInvitation) {
+      //   return res.json({ msg: "User not found, save invite in pending ", pendingInvitation: savedPendingInvitation });
+      // })
+      // .catch(function (err) {
+      //   return res.send(err);
+      //   // return res.status(500).send(err);
+      // });
 
     }
-    res.json({'Resend invitation email to' : pendinginvitation});
+    res.json({ 'Resend invitation email to': pendinginvitation });
   });
 });
 
 
 
-router.post('/', [passport.authenticate(['basic', 'jwt'], { session: false }), validtoken], function (req, res) {
+router.post('/', function (req, res) {
 
-  console.log(req.body);
+  winston.debug(req.body);
   var newPendingInvitation = new PendingInvitation({
     email: req.body.email,
     role: req.body.role,
@@ -54,19 +54,23 @@ router.post('/', [passport.authenticate(['basic', 'jwt'], { session: false }), v
 
   newPendingInvitation.save(function (err, savedPendingInvitation) {
     if (err) {
-      console.log('--- > ERROR ', err)
+      winston.error('--- > ERROR ', err)
       return res.status(500).send({ success: false, msg: 'Error saving object.' });
     }
     res.json(savedPendingInvitation);
   });
 });
 
-router.put('/:pendinginvitationid', [passport.authenticate(['basic', 'jwt'], { session: false }), validtoken], function (req, res) {
+router.put('/:pendinginvitationid', function (req, res) {
 
-  console.log('PENDING INVITATION UPDATE - BODY ', req.body);
+  winston.debug('PENDING INVITATION UPDATE - BODY ', req.body);
+
+  var update = {};
+  update.email = req.body.email;
+  update.role = req.body.role;
 
   PendingInvitation
-    .findByIdAndUpdate(req.params.pendinginvitationid, req.body, { new: true, upsert: true },
+    .findByIdAndUpdate(req.params.pendinginvitationid, update, { new: true, upsert: true },
       function (err, updatedPendingInvitation) {
         if (err) {
           return res.status(500).send({ success: false, msg: 'Error updating object.' });
@@ -76,9 +80,9 @@ router.put('/:pendinginvitationid', [passport.authenticate(['basic', 'jwt'], { s
 });
 
 
-router.delete('/:pendinginvitationid', [passport.authenticate(['basic', 'jwt'], { session: false }), validtoken], function (req, res) {
+router.delete('/:pendinginvitationid', function (req, res) {
 
-  console.log('PENDING INVITATION DELETE - BODY ', req.body);
+  winston.debug('PENDING INVITATION DELETE - BODY ', req.body);
 
   PendingInvitation.remove({ _id: req.params.pendinginvitationid }, function (err, pendinginvitation) {
     if (err) {
@@ -89,9 +93,10 @@ router.delete('/:pendinginvitationid', [passport.authenticate(['basic', 'jwt'], 
 });
 
 
-router.get('/:pendinginvitationid', [passport.authenticate(['basic', 'jwt'], { session: false }), validtoken], function (req, res) {
 
-  console.log('PENDING INVITATION GET BY ID - BODY ', req.body);
+router.get('/:pendinginvitationid', function (req, res) {
+
+  winston.debug('PENDING INVITATION GET BY ID - BODY ', req.body);
 
   PendingInvitation.findById(req.params.pendinginvitationid, function (err, pendinginvitation) {
     if (err) {
@@ -106,20 +111,21 @@ router.get('/:pendinginvitationid', [passport.authenticate(['basic', 'jwt'], { s
 
 
 
-router.get('/', [passport.authenticate(['basic', 'jwt'], { session: false }), validtoken], function (req, res) {
 
-  console.log("GET PENDING INVITATION - req projectid", req.projectid);
- 
+router.get('/', function (req, res) {
+
+  winston.debug("GET PENDING INVITATION - req projectid", req.projectid);
+
   PendingInvitation.find({ "id_project": req.projectid }, function (err, pendinginvitation) {
     if (err) {
-      console.log('GET PENDING INVITATION ERROR ', err);
+      winston.error('GET PENDING INVITATION ERROR ', err);
       return (err);
     }
     if (!pendinginvitation) {
       return res.status(404).send({ success: false, msg: 'Object not found.' });
     }
-    console.log('GET PENDING INVITATION ', pendinginvitation);
-    
+    winston.debug('GET PENDING INVITATION ', pendinginvitation);
+
     res.json(pendinginvitation);
   });
 });

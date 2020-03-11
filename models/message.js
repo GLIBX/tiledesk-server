@@ -1,5 +1,6 @@
 var mongoose = require('mongoose');
 var Schema = mongoose.Schema;
+var winston = require('../config/winston');
 
 var MessageSchema = new Schema({
   sender: {
@@ -18,13 +19,19 @@ var MessageSchema = new Schema({
   //   type: String,
   //   required: false
   // },
+  type: {
+    type: String,
+    required: true,
+    default: 'text',
+  },
   text: {
     type: String,
     required: true
   },
   id_project: {
     type: String,
-    required: true
+    required: true,
+    index: true
   },
   status: {
     type: Number,
@@ -58,4 +65,14 @@ var MessageSchema = new Schema({
 
 // }
 
-module.exports = mongoose.model('message', MessageSchema);
+MessageSchema.index({ recipient: 1, updatedAt:1 }); // schema level
+MessageSchema.index({ id_project: 1, recipient:1, updatedAt: 1 }); // schema level
+
+var message = mongoose.model('message', MessageSchema);
+
+if (process.env.MONGOOSE_SYNCINDEX) {
+  message.syncIndexes();
+  winston.info("message syncIndexes")
+}
+
+module.exports = message;
