@@ -14,6 +14,7 @@
   },
   "private": false,
   "author": "Andrea Leo - Frontiere21 SRL",
+  "contributors": ["emmanuel app - Glibx inc", "dezzyboy - glibx inc"],
   "license": "AGPL-3.0",
   "homepage": "https://www.tiledesk.com",
   "repository": {
