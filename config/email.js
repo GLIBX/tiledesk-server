@@ -1,7 +1,7 @@
 module.exports = {
   'host':'smtp.mailgun.org',
-  'username': 'postmaster@mg.tiledesk.com',
-  'from': 'Tiledesk Notification <postmaster@mg.tiledesk.com>',
-  'bcc': 'tiledesknotification@frontiere21.it',
-  'baseUrl':'https://console.tiledesk.com/dashboard',
+  'username': 'postmaster@mg.trueclient.ca',
+  'from': 'Trueclient Notification <postmaster@mg.trueclient.ca>',
+  'bcc': 'info@glibx.com',
+  'baseUrl':'https://support.trueclient.ca/dashboard',
 };

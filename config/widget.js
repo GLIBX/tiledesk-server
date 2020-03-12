@@ -1,4 +1,4 @@
 module.exports = {
-  'location':'http://localhost:4200/',
+  'location':'https://widget.truelcient.ca/',
   'testLocation':'http://localhost:4200/',
 };
