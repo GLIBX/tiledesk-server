@@ -1,3 +1,3 @@
 module.exports = {
-  'databaseUrl': 'https://chat-v2-dev.firebaseio.com'
+  'databaseUrl': 'https://chatapp-3ea78.firebaseio.com'
 };

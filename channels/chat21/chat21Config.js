@@ -1,5 +1,5 @@
 module.exports = {
-  'url': 'https://CHANGEIT.cloudfunctions.net',
-  'appid': 'tilechat',
-  'adminToken' : 'chat21-secret-orgAa,'
+  'url': 'https://us-central1-chatapp-3ea78.cloudfunctions.net',
+  'appid': 'truelcient',
+  'adminToken' : 'dezzy-beats1-glibx,'
 };
